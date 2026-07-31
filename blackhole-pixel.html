@@ -412,6 +412,7 @@ function setPalette(){
     const hex = palette[i]; const h = parseInt(hex.slice(1), 16);
     arr.push(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
   }
+  gl.useProgram(progScene);
   gl.uniform3fv(Us.u_palette, arr);
   gl.uniform1i(Us.u_palCount, palette.length);
   gl.useProgram(progFinal);
