@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PIXEL BLACK HOLE</title>
+<link rel="icon" href="data:,">
+<style>
+  html,body{margin:0;padding:0;background:#0a0a0f;color:#cfd2e0;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  #wrap{max-width:900px;margin:0 auto;padding:24px 16px;text-align:center;}
+  h1{font-size:22px;letter-spacing:4px;font-weight:700;color:#f5f7ff;margin:0 0 4px;}
+  #sub{font-size:11px;color:#6a6f8a;margin:0 0 16px;}
+  canvas{width:768px;height:432px;max-width:100%;border:2px solid #1c1f2e;
+    image-rendering:pixelated;image-rendering:crisp-edges;background:#000;
+    touch-action:none;cursor:grab;display:block;margin:0 auto;}
+  canvas:active{cursor:grabbing;}
+  #panel{margin:16px auto 0;max-width:768px;text-align:left;background:#0f1119;
+    border:1px solid #1c1f2e;padding:14px 16px;font-size:12px;}
+  .row{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;margin:6px 0;}
+  .ctl label{display:block;font-size:10px;color:#8a8fa8;letter-spacing:1px;margin-bottom:2px;}
+  input[type=range]{width:150px;accent-color:#ff9a2e;height:14px;}
+  select{background:#1c1f2e;color:#cfd2e0;border:1px solid #2a2e42;font-family:inherit;}
+  .swatches{display:flex;gap:6px;}
+  .sw{width:26px;height:26px;border:2px solid #2a2e42;cursor:pointer;border-radius:3px;}
+  .sw.on{border-color:#fff;}
+  .tog{display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+  .tog label{font-size:11px;color:#cfd2e0;display:flex;align-items:center;gap:4px;cursor:pointer;}
+  button{background:#1c1f2e;color:#cfd2e0;border:1px solid #2a2e42;border-radius:3px;
+    font-family:inherit;font-size:11px;padding:5px 10px;cursor:pointer;}
+  button:hover{background:#242839;}
+  #hint{font-size:10px;color:#565b75;margin-top:10px;line-height:1.6;}
+  #err{display:none;color:#ff6a6a;font-size:13px;padding:40px;text-align:center;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>PIXEL BLACK HOLE</h1>
+  <p id="sub">SCHWARZSCHILD GEODESIC RAYTRACER &middot; RETRO PALETTE &middot; ONE FILE &middot; CINEMATIC PASS</p>
+  <div id="err">WebGL2 is required. Please use a modern browser (Chrome/Edge/Firefox/Safari 15+).</div>
+  <canvas id="cv" width="192" height="108"></canvas>
+  <div id="panel">
+    <div class="row">
+      <div class="ctl"><label>DISK HEAT</label><input type="range" id="heat" min="0" max="2" step="0.01" value="1"></div>
+      <div class="ctl"><label>DOPPLER BEAMING</label><input type="range" id="beam" min="0" max="4" step="0.05" value="3"></div>
+      <div class="ctl"><label>TILT &deg;</label><input type="range" id="tilt" min="4" max="80" step="0.5" value="18"></div>
+      <div class="ctl"><label>DISTANCE</label><input type="range" id="zoom" min="5" max="30" step="0.1" value="10"></div>
+      <div class="ctl"><label>QUALITY</label>
+        <select id="quality">
+          <option value="64">LOW</option>
+          <option value="128" selected>MED</option>
+          <option value="256">HIGH</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="ctl"><label>PALETTE</label><div class="swatches" id="swatches"></div></div>
+      <div class="tog">
+        <label><input type="checkbox" id="dither" checked>DITHER</label>
+        <label><input type="checkbox" id="scan" checked>SCANLINES</label>
+        <label><input type="checkbox" id="orbit" checked>AUTO-ORBIT</label>
+        <label><input type="checkbox" id="fly">FLY-THROUGH</label>
+      </div>
+      <button id="seed">NEW SKY</button>
+    </div>
+    <div class="row">
+      <div class="ctl"><label>FILM GRADE</label>
+        <select id="grade">
+          <option value="NONE" selected>NONE</option>
+          <option value="INTERSTELLAR">INTERSTELLAR</option>
+          <option value="NOIR">NOIR</option>
+          <option value="WARM">WARM</option>
+          <option value="COLD">COLD</option>
+        </select>
+      </div>
+      <div class="ctl"><label>BLOOM</label><input type="range" id="bloom" min="0" max="3" step="0.05" value="0.8"></div>
+      <button id="save">SAVE PNG</button>
+    </div>
+    <div id="hint">DRAG to orbit &middot; SCROLL to zoom &middot; real Schwarzschild photon geodesics — the photon ring at 1.5 R&#8331;, the
+    lensed underside of the disk, Doppler beaming (I &prop; D&#179;) and gravitational redshift are all emergent physics, not faked.
+    FLY-THROUGH runs a slow cinematic camera path. BLOOM adds a post-pass glow around the white-hot inner disk. FILM GRADE is a
+    color grade + anamorphic letterbox, exactly how a movie gets its look after the render. SAVE PNG captures the frame.</div>
+  </div>
+</div>
+
+<script>
+const PALETTES = {
+  GARGANTUA: ['#050208','#3d0f02','#ff4d00','#ff9a2e','#ffd9a0','#eef4ff'],
+  VAPORWAVE: ['#0d0221','#3c096c','#ff2bd6','#00fff0','#ffe1fb','#ffffff'],
+  TERMINAL : ['#000000','#0a2a0a','#33ff33','#b8ffb8','#eaffea','#ffffff'],
+  AMBER    : ['#000000','#2a1200','#ffb000','#ffd966','#fff3c4','#ffffff']
+};
+
+// film grades: sat/con applied pre-quantize, grain + letterbox post-quantize
+const GRADES = {
+  NONE:         {sat:1.00, con:1.00, mul:[1.0,1.0,1.0], add:[0,0,0],  grain:0.00, letterbox:false},
+  INTERSTELLAR: {sat:1.18, con:1.08, mul:[1.04,0.99,1.02], add:[0.01,-0.01,0.02], grain:0.05, letterbox:true},
+  NOIR:         {sat:0.35, con:1.30, mul:[0.92,0.94,1.02], add:[0,0,0],  grain:0.09, letterbox:true},
+  WARM:         {sat:1.12, con:1.05, mul:[1.10,1.01,0.86], add:[0.015,0.005,-0.01], grain:0.04, letterbox:false},
+  COLD:         {sat:1.02, con:1.02, mul:[0.92,1.00,1.18], add:[0.01,0.0,0.02], grain:0.04, letterbox:false}
+};
+
+const cv = document.getElementById('cv');
+const gl = cv.getContext('webgl2', {antialias:false, powerPreference:'high-performance', preserveDrawingBuffer:true});
+if (!gl) { document.getElementById('err').style.display='block'; cv.style.display='none'; throw new Error('no webgl2'); }
+
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+
+const VERT = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+// ---- pass 1: the raytrace itself (physics identical to v1) ----
+const FRAG_SCENE = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2  u_res;
+uniform float u_time;
+uniform float u_seed;
+uniform vec3  u_camPos;
+uniform vec3  u_fwd, u_right, u_up;
+uniform float u_tanFov;
+uniform float u_heat;
+uniform float u_beam;
+uniform int   u_maxSteps;
+uniform vec3  u_palette[6];
+uniform int   u_palCount;
+
+const float INNER = 3.0;   // ISCO: innermost stable circular orbit
+const float OUTER = 12.0;  // disk outer edge
+const float RS    = 1.0;   // Schwarzschild radius (units: M = 0.5)
+const float ESC   = 25.0;  // escape radius
+
+float hash(vec3 p){
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+float fbm(vec3 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++){
+    v += a * hash(floor(p));
+    p = p * 2.0 + 17.0;
+    a *= 0.5;
+  }
+  return v;
+}
+
+// cool outer disk -> blue-white hot inner edge (thin-disk T ~ r^-3/4)
+vec3 diskColor(float t){
+  float heat = clamp(pow(1.0 - t, 2.0) * u_heat, 0.0, 1.0);
+  vec3 cold = vec3(1.0, 0.35, 0.05);
+  vec3 warm = vec3(1.0, 0.70, 0.20);
+  vec3 hot  = vec3(0.85, 0.92, 1.0);
+  vec3 c = mix(cold, warm, smoothstep(0.0, 0.4, t));
+  return mix(c, hot, heat);
+}
+
+vec3 render(vec3 ro, vec3 rd){
+  vec3 p = ro, v = rd;
+  // conserved specific angular momentum of the photon
+  float L2 = dot(cross(ro, rd), cross(ro, rd));
+  vec3 col = vec3(0.0);
+  float prevY = p.y;
+
+  for (int i = 0; i < 256; i++){
+    if (i >= u_maxSteps) break;
+    float r = max(length(p), 0.6);
+
+    // swallowed by horizon -> black (the shadow)
+    if (r < 1.01) break;
+
+    // escaped -> sample procedural sky
+    if (r > ESC){
+      vec3 d = normalize(v);
+      vec3 sky = vec3(0.0);
+      sky += u_palette[1] * fbm(d * 3.0 + u_seed) * 0.18;
+      float s1 = smoothstep(0.994, 0.9995, hash(floor(d * 140.0 + u_seed)));
+      float s2 = smoothstep(0.998, 0.9999, hash(floor(d * 60.0 + u_seed * 3.1)));
+      sky += vec3(1.0) * (s1 * 0.9 + s2 * 0.5);
+      col += sky;
+      break;
+    }
+
+    // accretion disk: thin band around the equatorial plane (y=0)
+    if (r > INNER && r < OUTER && abs(p.y) < 0.06){
+      float band = exp(-(p.y * p.y) / (2.0 * 0.02));
+      float t = clamp((r - INNER) / (OUTER - INNER), 0.0, 1.0);
+      // Keplerian orbital speed in geometrized units (M=0.5, c=1)
+      float beta = sqrt(0.5 / r);
+      float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
+      // direction of orbital motion at this point (around the y axis)
+      vec3 tan = normalize(vec3(p.z, 0.0, -p.x));
+      float cosA = dot(tan, normalize(v));
+      // relativistic Doppler factor
+      float D = 1.0 / (gamma * (1.0 - beta * cosA));
+      // flux I ~ D^3 ; u_beam lets you turn beaming off (0) or overdo it
+      float beam = pow(D, u_beam);
+      // gravitational redshift sqrt(1 - rs/r)
+      float redshift = sqrt(max(1.0 - RS / r, 0.0));
+      // thin-disk brightness: falls steeply with radius
+      float I = pow(INNER / r, 3.0) * band * redshift * beam;
+      col += diskColor(t) * I * 4.0;
+    }
+
+    // integrate null geodesic:  a = -1.5 * L^2 * r / |r|^5   (M = 0.5)
+    float dt = 0.03 * r;
+    vec3 a = -1.5 * L2 * p / (r * r * r * r * r);
+    v += a * dt;
+    p += v * dt;
+    prevY = p.y;
+  }
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy / u_res) * 2.0 - 1.0;
+  float aspect = u_res.x / u_res.y;
+  vec3 rd = normalize(u_fwd + u_right * uv.x * u_tanFov * aspect + u_up * uv.y * u_tanFov);
+
+  vec3 col = render(u_camPos, rd);
+  // ACES-ish tone map + gamma, same as v1 (post is done in pass 3)
+  col = col * (2.51 * col + 0.03) / (col * (2.43 * col + 0.59) + 0.14);
+  col = pow(col, vec3(1.0 / 2.2));
+  fragColor = vec4(col, 1.0);
+}`;
+
+// ---- pass 2: bloom - extract bright pixels, blur them into a glow ----
+const FRAG_BLOOM = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2  u_res;
+uniform sampler2D u_tex;
+uniform float u_bloom;   // 0..3 slider
+
+float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+// soft threshold: 0 below 0.55 luma, ramps to 1 at 1.0
+float extract(vec3 c){ return clamp((luma(c) - 0.55) / 0.45, 0.0, 1.0); }
+
+void main(){
+  vec2 px = 1.0 / u_res;
+  vec2 uv = gl_FragCoord.xy / u_res;
+  // glow radius grows with strength
+  float rad = 1.0 + u_bloom * 1.8;
+  vec3 acc = vec3(0.0);
+  float tw = 0.0;
+  for (int dy = -1; dy <= 1; dy++){
+    for (int dx = -1; dx <= 1; dx++){
+      vec2 off = vec2(float(dx), float(dy)) * px * rad;
+      vec3 s = texture(u_tex, uv + off).rgb;
+      float w = extract(s) * (dx == 0 && dy == 0 ? 4.0 : (dx == 0 || dy == 0 ? 2.0 : 1.0));
+      acc += s * w;
+      tw += w;
+    }
+  }
+  fragColor = vec4(tw > 0.0 ? acc / tw : vec3(0.0), 1.0);
+}`;
+
+// ---- pass 3: composite - bloom add, film grade, palette quantize, scanlines, letterbox, grain ----
+const FRAG_FINAL = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2  u_res;
+uniform float u_time;
+uniform sampler2D u_texA;   // scene
+uniform sampler2D u_texB;   // bloom
+uniform float u_bloom;
+uniform vec4  u_grade;      // sat, con, grain, letterbox
+uniform vec3  u_tintMul;
+uniform vec3  u_tintAdd;
+uniform vec3  u_palette[6];
+uniform int   u_palCount;
+uniform float u_dither;
+uniform float u_scan;
+
+float hash(vec3 p){
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+
+const float BAYER[16] = float[16](
+  0.0, 8.0, 2.0, 10.0,
+  12.0, 4.0, 14.0, 6.0,
+  3.0, 11.0, 1.0, 9.0,
+  15.0, 7.0, 13.0, 5.0
+);
+
+vec3 quantize(vec3 c){
+  float d0 = 1e9, d1 = 1e9;
+  vec3 c0 = u_palette[0], c1 = u_palette[0];
+  for (int i = 0; i < 6; i++){
+    if (i >= u_palCount) break;
+    float d = dot(c - u_palette[i], c - u_palette[i]);
+    if (d < d0){ d1 = d0; c1 = c0; d0 = d; c0 = u_palette[i]; }
+    else if (d < d1){ d1 = d; c1 = u_palette[i]; }
+  }
+  if (u_dither < 0.5) return c0;
+  float f = d0 / (d0 + d1 + 1e-6);
+  int ix = int(mod(gl_FragCoord.x, 4.0));
+  int iy = int(mod(gl_FragCoord.y, 4.0));
+  float th = (BAYER[iy * 4 + ix] + 0.5) / 16.0;
+  return f < th ? c0 : c1;
+}
+
+void main(){
+  vec2 tuv = gl_FragCoord.xy / u_res;
+  vec2 uv = tuv * 2.0 - 1.0;
+
+  vec3 col = texture(u_texA, tuv).rgb;
+  col += texture(u_texB, tuv).rgb * u_bloom;
+
+  // film grade (pre-quantize, so it shifts which palette colors are chosen)
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(lum), col, u_grade.x);            // saturation
+  col = (col - 0.5) * u_grade.y + 0.5;             // contrast
+  col = clamp(col * u_tintMul + u_tintAdd, 0.0, 1.0);
+
+  col = quantize(col);
+
+  if (u_scan > 0.5){
+    float line = 0.75 + 0.25 * step(0.5, fract(gl_FragCoord.y * 0.5));
+    col *= line;
+  }
+  // vignette
+  col *= 1.0 - 0.30 * dot(uv, uv) * 0.6;
+  // animated film grain
+  float g = (hash(vec3(gl_FragCoord.xy, floor(u_time * 24.0))) - 0.5) * u_grade.z * 0.5;
+  col += vec3(g);
+  // anamorphic letterbox: black bars top/bottom (2.39:1 frame inside 16:9)
+  if (u_grade.w > 0.5) col *= 1.0 - step(0.744, abs(uv.y));
+
+  fragColor = vec4(col, 1.0);
+}`;
+
+function makeProgram(fragSrc){
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragSrc));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  return prog;
+}
+
+const progScene = makeProgram(FRAG_SCENE);
+const progBloom = makeProgram(FRAG_BLOOM);
+const progFinal = makeProgram(FRAG_FINAL);
+
+const Us = {}, Ub = {}, Uf = {};
+for (const n of ['u_res','u_time','u_seed','u_camPos','u_fwd','u_right','u_up','u_tanFov',
+                 'u_heat','u_beam','u_maxSteps','u_palette','u_palCount'])
+  Us[n] = gl.getUniformLocation(progScene, n);
+for (const n of ['u_res','u_tex','u_bloom'])
+  Ub[n] = gl.getUniformLocation(progBloom, n);
+for (const n of ['u_res','u_time','u_texA','u_texB','u_bloom','u_grade','u_tintMul','u_tintAdd',
+                 'u_palette','u_palCount','u_dither','u_scan'])
+  Uf[n] = gl.getUniformLocation(progFinal, n);
+
+// --- offscreen targets: scene -> texA, bloom -> texB ---
+function makeTarget(){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cv.width, cv.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fbo incomplete');
+  return {tex, fbo};
+}
+const targetA = makeTarget();
+const targetB = makeTarget();
+// bloom texture wants linear filtering for a soft blur
+gl.bindTexture(gl.TEXTURE_2D, targetB.tex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+gl.useProgram(progFinal);
+gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targetA.tex); gl.uniform1i(Uf.u_texA, 0);
+gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, targetB.tex); gl.uniform1i(Uf.u_texB, 1);
+gl.useProgram(progBloom);
+gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targetA.tex); gl.uniform1i(Ub.u_tex, 0);
+gl.useProgram(progScene);
+
+let palette = PALETTES.GARGANTUA, palName = 'GARGANTUA';
+let az = Math.random() * 6.28, el = 18 * Math.PI / 180, dist = 10;
+let maxSteps = 128, dither = 1, scan = 1, orbit = 1, seed = Math.random() * 100;
+let fly = 0, grade = GRADES.NONE, bloom = 0.8;
+let dragging = false, lastX = 0, lastY = 0, lastT = 0;
+
+function setPalette(){
+  const arr = [];
+  for (let i = 0; i < 6; i++){
+    const hex = palette[i]; const h = parseInt(hex.slice(1), 16);
+    arr.push(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
+  }
+  gl.uniform3fv(Us.u_palette, arr);
+  gl.uniform1i(Us.u_palCount, palette.length);
+  gl.useProgram(progFinal);
+  gl.uniform3fv(Uf.u_palette, arr);
+  gl.uniform1i(Uf.u_palCount, palette.length);
+  gl.useProgram(progScene);
+}
+
+function frame(t){
+  const dt = Math.min((t - lastT) / 1000, 0.05); lastT = t;
+  const secs = t / 1000;
+
+  if (fly){
+    // slow cinematic path: radius and elevation breathe, gaze drifts across the disk
+    az = secs * 0.22;
+    el = (16 + 9 * Math.sin(secs * 0.11)) * Math.PI / 180;
+    dist = 8.5 + 3.2 * Math.sin(secs * 0.073);
+    // keep the sliders truthful so resuming after fly-off doesn't jump
+    document.getElementById('tilt').value = Math.round(el * 180 / Math.PI * 10) / 10;
+    document.getElementById('zoom').value = Math.round(dist * 10) / 10;
+  } else if (orbit && !dragging){
+    az += dt * 0.10;
+  }
+
+  const c = Math.cos(el), s = Math.sin(el);
+  const ro = [dist * c * Math.sin(az), dist * s, dist * c * Math.cos(az)];
+  // gaze target: origin normally, a drifting point on the disk plane when flying
+  const tx = fly ? 1.6 * Math.sin(secs * 0.17) : 0;
+  const ty = fly ? 0.35 * Math.sin(secs * 0.23) : 0;
+  const tz = fly ? 1.6 * Math.cos(secs * 0.17) : 0;
+  const fx = tx - ro[0], fy = ty - ro[1], fz = tz - ro[2];
+  const fl = Math.hypot(fx, fy, fz);
+  const fwd = [fx / fl, fy / fl, fz / fl];
+  const up = [0, 1, 0];
+  const right = [
+    fwd[2] * up[1] - fwd[1] * up[2],
+    fwd[0] * up[2] - fwd[2] * up[0],
+    fwd[1] * up[0] - fwd[0] * up[1]
+  ];
+  const rl = Math.hypot(right[0], right[1], right[2]);
+  const rxn = right.map(x => x / rl);
+  const upv = [
+    rxn[1] * fwd[2] - rxn[2] * fwd[1],
+    rxn[2] * fwd[0] - rxn[0] * fwd[2],
+    rxn[0] * fwd[1] - rxn[1] * fwd[0]
+  ];
+
+  // ---- pass 1: raytrace into texA ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, targetA.fbo);
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.useProgram(progScene);
+  gl.uniform2f(Us.u_res, cv.width, cv.height);
+  gl.uniform1f(Us.u_time, secs);
+  gl.uniform1f(Us.u_seed, seed);
+  gl.uniform3fv(Us.u_camPos, ro);
+  gl.uniform3fv(Us.u_fwd, fwd);
+  gl.uniform3fv(Us.u_right, rxn);
+  gl.uniform3fv(Us.u_up, upv);
+  gl.uniform1f(Us.u_tanFov, Math.tan(24 * Math.PI / 180));
+  gl.uniform1f(Us.u_heat, parseFloat(document.getElementById('heat').value));
+  gl.uniform1f(Us.u_beam, parseFloat(document.getElementById('beam').value));
+  gl.uniform1i(Us.u_maxSteps, maxSteps);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // ---- pass 2: bloom into texB ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, targetB.fbo);
+  gl.useProgram(progBloom);
+  gl.uniform2f(Ub.u_res, cv.width, cv.height);
+  gl.uniform1f(Ub.u_bloom, bloom);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // ---- pass 3: composite to canvas ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(progFinal);
+  gl.uniform2f(Uf.u_res, cv.width, cv.height);
+  gl.uniform1f(Uf.u_time, secs);
+  gl.uniform1f(Uf.u_bloom, bloom);
+  gl.uniform4f(Uf.u_grade, grade.sat, grade.con, grade.grain, grade.letterbox ? 1 : 0);
+  gl.uniform3fv(Uf.u_tintMul, grade.mul);
+  gl.uniform3fv(Uf.u_tintAdd, grade.add);
+  gl.uniform1f(Uf.u_dither, dither);
+  gl.uniform1f(Uf.u_scan, scan);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  requestAnimationFrame(frame);
+}
+
+// --- controls ---
+document.getElementById('tilt').oninput = e => el = parseFloat(e.target.value) * Math.PI / 180;
+document.getElementById('zoom').oninput = e => dist = parseFloat(e.target.value);
+document.getElementById('quality').onchange = e => maxSteps = parseInt(e.target.value);
+document.getElementById('dither').onchange = e => dither = e.target.checked ? 1 : 0;
+document.getElementById('scan').onchange  = e => scan   = e.target.checked ? 1 : 0;
+document.getElementById('orbit').onchange = e => orbit  = e.target.checked ? 1 : 0;
+document.getElementById('fly').onchange   = e => fly    = e.target.checked ? 1 : 0;
+document.getElementById('bloom').oninput  = e => bloom  = parseFloat(e.target.value);
+document.getElementById('grade').onchange = e => grade  = GRADES[e.target.value];
+document.getElementById('seed').onclick   = () => { seed = Math.random() * 100; };
+document.getElementById('save').onclick   = () => {
+  // export at 4x (what the user sees on screen), nearest-neighbor so pixels stay chunky
+  const t = document.createElement('canvas');
+  t.width = cv.width * 4; t.height = cv.height * 4;
+  const ctx = t.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cv, 0, 0, t.width, t.height);
+  const a = document.createElement('a');
+  a.href = t.toDataURL('image/png');
+  a.download = 'blackhole-' + palName.toLowerCase() + '-' + Date.now() + '.png';
+  a.click();
+};
+
+const swatches = document.getElementById('swatches');
+for (const name of Object.keys(PALETTES)){
+  const b = document.createElement('div');
+  b.className = 'sw' + (name === 'GARGANTUA' ? ' on' : '');
+  const colors = PALETTES[name].slice(0, 4);
+  b.style.background = `linear-gradient(135deg, ${colors.join(', ')})`;
+  b.title = name;
+  b.onclick = () => {
+    palette = PALETTES[name]; palName = name; setPalette();
+    for (const s of swatches.children) s.classList.remove('on');
+    b.classList.add('on');
+  };
+  swatches.appendChild(b);
+}
+
+cv.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (!dragging || fly) return;
+  az += (e.clientX - lastX) * 0.006;
+  el = Math.min(1.35, Math.max(0.06, el - (e.clientY - lastY) * 0.004));
+  document.getElementById('tilt').value = Math.round(el * 180 / Math.PI * 10) / 10;
+  lastX = e.clientX; lastY = e.clientY;
+});
+cv.addEventListener('pointerup', e => dragging = false);
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (!fly) {
+    dist = Math.min(30, Math.max(5, dist * Math.pow(1.0015, e.deltaY)));
+    document.getElementById('zoom').value = Math.round(dist * 10) / 10;
+  }
+}, {passive:false});
+
+setPalette();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
