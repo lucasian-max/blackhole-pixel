@@ -325,6 +325,36 @@ float Theta_pot(float th, float E, float Lz, float Q) {
   return Q - cos(th)*cos(th) * (Lz*Lz/(sin_th*sin_th) - a*a*E*E);
 }
 
+// ISCO radius for prograde equatorial orbit (Bardeen et al.)
+float isco_radius(float a_dimless) {
+  float a_val = a_dimless * M;
+  float Z1 = 1.0 + pow(1.0 - a_val*a_val/(M*M), 1.0/3.0) * (pow(1.0 + a_val/M, 1.0/3.0) + pow(1.0 - a_val/M, 1.0/3.0));
+  float Z2 = sqrt(3.0*a_val*a_val/(M*M) + Z1*Z1);
+  return M * (3.0 + Z2 - sqrt((3.0 - Z1)*(3.0 + Z1 + 2.0*Z2)));
+}
+
+// Kerr orbital 4-velocity for circular prograde equatorial orbit (Bardeen et al.)
+// Returns u^t, u^phi
+vec2 kerr_orbital_4vel(float r, float a_dimless) {
+  float a_val = a_dimless * M;
+  float r32 = r*sqrt(r);
+  float denom = r32 + a_val*sqrt(M);
+  float Omega = sqrt(M) / denom;
+  float u_t = denom / sqrt(r*r*r - 3.0*M*r*r + 2.0*a_val*sqrt(M)*r32);
+  float u_phi = Omega * u_t;
+  return vec2(u_t, u_phi);
+}
+
+// 4-vector Doppler factor for Kerr disk emission
+// D = 1 / (-E*u^t + Lz*u^phi) since observer at infinity has u_obs = (1,0,0,0) -> p_mu u^mu = -p_t = E = 1
+float kerr_doppler(float r, float th, float E, float Lz, float Q, float a_dimless) {
+  vec2 u = kerr_orbital_4vel(r, a_dimless);
+  float p_t = -E;
+  float p_phi = Lz;
+  float p_mu_u = p_t * u.x + p_phi * u.y;
+  return 1.0 / max(-p_mu_u, 1e-4);
+}
+
 // First-order Kerr geodesic RHS with signs: returns vec4(sigma_r*dr, sigma_th*dth, dphi, dt)
 vec4 kerr_rhs_signed(float r, float th, float E, float Lz, float Q, float sigma_r, float sigma_th) {
   float S = Sigma(r, th);
@@ -377,6 +407,7 @@ vec3 render(vec3 ro, vec3 rd){
   float r = r0, th = th0, phi = phi0;
   vec3 col = vec3(0.0);
   float prev_cos_th = cos(th);
+  float prev_r = r;
 
   // Horizon radius
   float r_horizon = M + sqrt(max(M*M - a*a, 0.0));
@@ -416,32 +447,40 @@ vec3 render(vec3 ro, vec3 rd){
     // Disk crossing: detect sign change of cos(th) through equatorial plane
     float cos_th = cos(th);
     bool crossed = (prev_cos_th * cos_th < 0.0);
-    if (crossed && r > INNER && r < OUTER) {
-      // Compute disk emission at crossing (Schwarzschild physics for now)
-      vec4 k = kerr_rhs_signed(r, th, E, Lz, Q, sigma_r, sigma_th);
-      float dr = k.x, dth = k.y, dphi = k.z;
+    if (crossed) {
+      // Interpolate to exact crossing point (linear in cos_th)
+      float alpha = prev_cos_th / (prev_cos_th - cos_th);
+      float r_cross = prev_r + alpha * (r - prev_r);
 
-      // Cartesian direction components at th ~ pi/2
-      float dx = dr * sin(th)*cos(phi) + dth * r * cos(th)*cos(phi) - dphi * r * sin(th)*sin(phi);
-      float dy = dr * cos(th) - dth * r * sin(th);
-      float dz = dr * sin(th)*sin(phi) + dth * r * cos(th)*sin(phi) + dphi * r * sin(th)*cos(phi);
-      vec3 photon_dir = normalize(vec3(dx, dy, dz));
+      // Disk bounds
+      float r_isco = isco_radius(u_spin);
+      float r_outer = OUTER;
+      if (r_cross > r_isco && r_cross < r_outer) {
+        // Disk emission with Kerr physics
+        float band = exp(-(th - 1.5708)*(th - 1.5708) / (2.0 * 0.05*0.05));
+        float t = (r_cross - r_isco) / (r_outer - r_isco);
 
-      // Orbital direction in Cartesian at this phi (disk at th=pi/2)
-      vec3 orbital_dir = normalize(vec3(-sin(phi), 0.0, cos(phi)));
+        // Temperature with Novikov-Thorne inner-edge factor
+        float T = pow(1.0 - t, 0.75) * pow(1.0 - sqrt(r_isco/r_cross), 0.25);
 
-      float band = exp(-(r * cos_th * r * cos_th) / (2.0 * 0.02));
-      float t = clamp((r - INNER) / (OUTER - INNER), 0.0, 1.0);
-      float beta = sqrt(0.5 / r);
-      float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
-      float cosA = dot(photon_dir, orbital_dir);
-      float D = 1.0 / (gamma * (1.0 - beta * cosA));
-      float beam = pow(D, u_beam);
-      float redshift = sqrt(max(1.0 - RS / r, 0.0));
-      float I = pow(INNER / r, 3.0) * band * redshift * beam;
-      col += diskColor(t) * I * 4.0;
+        // Doppler factor (4-vector)
+        float D = kerr_doppler(r_cross, 1.5708, E, Lz, Q, u_spin);
+        float beam = pow(D, u_beam);
+
+        // Gravitational redshift (bolometric D_grav^2)
+        float redshift = 1.0 - M/r_cross;
+        redshift = redshift * redshift;
+
+        // Brightness
+        float I = pow(r_isco / r_cross, 3.0) * band * redshift * beam;
+
+        // Color from palette (Task 5 will refine, for now use a placeholder)
+        vec3 disk_col = vec3(1.0, 0.7, 0.2);
+        col += disk_col * I * 4.0 * u_heat;
+      }
     }
     prev_cos_th = cos_th;
+    prev_r = r;
 
     // RK4 step with sign tracking
     float dt = 0.03 * r;  // match Schwarzschild step size
