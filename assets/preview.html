@@ -1,0 +1,25 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Theme Icons Preview</title>
+<style>
+  body{background:#0a0a0f;color:#cfd2e0;font-family:ui-monospace,Menlo,monospace;padding:24px;}
+  h1{font-size:14px;letter-spacing:2px;color:#ff9a2e;}
+  .grid{display:grid;grid-template-columns:repeat(5,auto);gap:28px;margin-top:16px;}
+  .cell{text-align:center;}
+  .cell .big{width:96px;height:96px;image-rendering:pixelated;image-rendering:crisp-edges;
+    background:#0f1119;border:1px solid #2a2e42;display:flex;align-items:center;justify-content:center;}
+  .cell .big img{width:64px;height:64px;image-rendering:pixelated;}
+  .cell .small{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px;}
+  .cell .small img{width:16px;height:16px;image-rendering:pixelated;}
+  .name{font-size:11px;letter-spacing:1px;color:#8a8fa8;margin-top:6px;}
+</style></head><body>
+<h1>THEME ICONS &middot; 10 PALETTES</h1>
+<div class="grid" id="g"></div>
+<script>
+const names = ['gargantua','vaporwave','terminal','amber','ice','nova','sunset','blood','mono','toxic'];
+document.getElementById('g').innerHTML = names.map(n => `
+  <div class="cell">
+    <div class="big"><img src="icons/${n}.png"></div>
+    <div class="small"><img src="icons/${n}.png"></div>
+    <div class="name">${n.toUpperCase()}</div>
+  </div>`).join('');
+</script>
+</body></html>
