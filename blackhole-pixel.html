@@ -261,6 +261,14 @@ vec3 palette_color(float t) {
   return mix(u_palette[i0], u_palette[i1], f);
 }
 
+// ISCO radius for prograde equatorial orbit (Bardeen et al.)
+float isco_radius(float a_dimless) {
+  float a_val = a_dimless * M;
+  float Z1 = 1.0 + pow(1.0 - a_val*a_val/(M*M), 1.0/3.0) * (pow(1.0 + a_val/M, 1.0/3.0) + pow(1.0 - a_val/M, 1.0/3.0));
+  float Z2 = sqrt(3.0*a_val*a_val/(M*M) + Z1*Z1);
+  return M * (3.0 + Z2 - sqrt((3.0 - Z1)*(3.0 + Z1 + 2.0*Z2)));
+}
+
 vec3 diskColor(float t){
   float heat = clamp(pow(1.0 - t, 2.0) * u_heat, 0.0, 1.0);
   vec3 cold = vec3(1.0, 0.35, 0.05);
@@ -381,14 +389,6 @@ float R_pot(float r, float E, float Lz, float Q) {
 float Theta_pot(float th, float E, float Lz, float Q) {
   float sin_th = sin(th);
   return Q - cos(th)*cos(th) * (Lz*Lz/(sin_th*sin_th) - a*a*E*E);
-}
-
-// ISCO radius for prograde equatorial orbit (Bardeen et al.)
-float isco_radius(float a_dimless) {
-  float a_val = a_dimless * M;
-  float Z1 = 1.0 + pow(1.0 - a_val*a_val/(M*M), 1.0/3.0) * (pow(1.0 + a_val/M, 1.0/3.0) + pow(1.0 - a_val/M, 1.0/3.0));
-  float Z2 = sqrt(3.0*a_val*a_val/(M*M) + Z1*Z1);
-  return M * (3.0 + Z2 - sqrt((3.0 - Z1)*(3.0 + Z1 + 2.0*Z2)));
 }
 
 // Kerr orbital 4-velocity for circular prograde equatorial orbit (Bardeen et al.)
