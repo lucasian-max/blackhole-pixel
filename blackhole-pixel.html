@@ -96,8 +96,13 @@
           <option value="64">LOW</option>
           <option value="128" selected>MED</option>
           <option value="256">HIGH</option>
+          <option value="512">ULTRA</option>
         </select>
       </div>
+    </div>
+    <div class="row">
+      <div class="ctl"><label>SPIN</label><input type="range" id="spin" min="0" max="0.998" step="0.001" value="0.9"></div>
+      <div class="ctl"><label>JET BRIGHTNESS</label><input type="range" id="jetBrightness" min="0" max="4" step="0.05" value="1.5"></div>
     </div>
     <div class="row">
       <div class="ctl"><label>PALETTE [<span id="palname">GARGANTUA</span>]</label><div class="swatches" id="swatches"></div></div>
@@ -220,6 +225,9 @@ uniform float u_beam;
 uniform int   u_maxSteps;
 uniform vec3  u_palette[8];
 uniform int   u_palCount;
+
+uniform float u_spin;           // 0..0.998, dimensionless spin a/M
+uniform float u_jetBrightness;  // 0..4, jet emissivity scale
 
 const float INNER = 3.0;   // ISCO: innermost stable circular orbit
 const float OUTER = 12.0;  // disk outer edge
@@ -445,7 +453,7 @@ const progFinal = makeProgram(FRAG_FINAL);
 
 const Us = {}, Ub = {}, Uf = {};
 for (const n of ['u_res','u_time','u_seed','u_camPos','u_fwd','u_right','u_up','u_tanFov',
-                 'u_heat','u_beam','u_maxSteps','u_palette','u_palCount'])
+                 'u_heat','u_beam','u_maxSteps','u_palette','u_palCount','u_spin','u_jetBrightness'])
   Us[n] = gl.getUniformLocation(progScene, n);
 for (const n of ['u_res','u_tex','u_bloom'])
   Ub[n] = gl.getUniformLocation(progBloom, n);
@@ -556,6 +564,8 @@ function frame(t){
   gl.uniform1f(Us.u_tanFov, Math.tan(24 * Math.PI / 180));
   gl.uniform1f(Us.u_heat, parseFloat(document.getElementById('heat').value));
   gl.uniform1f(Us.u_beam, parseFloat(document.getElementById('beam').value));
+  gl.uniform1f(Us.u_spin, parseFloat(document.getElementById('spin').value));
+  gl.uniform1f(Us.u_jetBrightness, parseFloat(document.getElementById('jetBrightness').value));
   gl.uniform1i(Us.u_maxSteps, maxSteps);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
