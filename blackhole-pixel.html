@@ -294,7 +294,8 @@ vec3 render_schwarzschild(vec3 ro, vec3 rd){
       float cosA = dot(tan, normalize(v));
       float D = 1.0 / (gamma * (1.0 - beta * cosA));
       float beam = pow(D, u_beam);
-      float redshift = sqrt(max(1.0 - RS / r, 0.0));
+      float redshift = 1.0 - RS / r;
+      redshift = redshift * redshift;
       float I = pow(INNER / r, 3.0) * band * redshift * beam;
       col += diskColor(t) * I * 4.0;
     }
