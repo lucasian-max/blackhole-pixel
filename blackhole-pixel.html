@@ -209,7 +209,7 @@ void main(){
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-// ---- pass 1: the raytrace itself (physics identical to v1) ----
+// ---- pass 1: Kerr geodesic raytrace (RK4, adaptive step) ----
 const FRAG_SCENE = `#version 300 es
 precision highp float;
 out vec4 fragColor;
@@ -229,10 +229,13 @@ uniform int   u_palCount;
 uniform float u_spin;           // 0..0.998, dimensionless spin a/M
 uniform float u_jetBrightness;  // 0..4, jet emissivity scale
 
-const float INNER = 3.0;   // ISCO: innermost stable circular orbit
-const float OUTER = 12.0;  // disk outer edge
-const float RS    = 1.0;   // Schwarzschild radius (units: M = 0.5)
-const float ESC   = 25.0;  // escape radius
+const float M = 0.5;           // black hole mass (geometrized)
+const float INNER = 3.0;       // ISCO
+const float OUTER = 12.0;      // disk outer edge
+const float RS = 1.0;          // Schwarzschild radius (2M)
+const float ESC = 25.0;        // escape radius
+
+float a;  // dimensionful spin a = u_spin * M, set per-pixel in render()
 
 float hash(vec3 p){
   p = fract(p * 0.1031);
@@ -249,7 +252,6 @@ float fbm(vec3 p){
   return v;
 }
 
-// cool outer disk -> blue-white hot inner edge (thin-disk T ~ r^-3/4)
 vec3 diskColor(float t){
   float heat = clamp(pow(1.0 - t, 2.0) * u_heat, 0.0, 1.0);
   vec3 cold = vec3(1.0, 0.35, 0.05);
@@ -259,9 +261,9 @@ vec3 diskColor(float t){
   return mix(c, hot, heat);
 }
 
-vec3 render(vec3 ro, vec3 rd){
+// Original Schwarzschild integrator (exact match for SPIN=0)
+vec3 render_schwarzschild(vec3 ro, vec3 rd){
   vec3 p = ro, v = rd;
-  // conserved specific angular momentum of the photon
   float L2 = dot(cross(ro, rd), cross(ro, rd));
   vec3 col = vec3(0.0);
   float prevY = p.y;
@@ -270,10 +272,8 @@ vec3 render(vec3 ro, vec3 rd){
     if (i >= u_maxSteps) break;
     float r = max(length(p), 0.6);
 
-    // swallowed by horizon -> black (the shadow)
     if (r < 1.01) break;
 
-    // escaped -> sample procedural sky
     if (r > ESC){
       vec3 d = normalize(v);
       vec3 sky = vec3(0.0);
@@ -285,33 +285,207 @@ vec3 render(vec3 ro, vec3 rd){
       break;
     }
 
-    // accretion disk: thin band around the equatorial plane (y=0)
     if (r > INNER && r < OUTER && abs(p.y) < 0.06){
       float band = exp(-(p.y * p.y) / (2.0 * 0.02));
       float t = clamp((r - INNER) / (OUTER - INNER), 0.0, 1.0);
-      // Keplerian orbital speed in geometrized units (M=0.5, c=1)
       float beta = sqrt(0.5 / r);
       float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
-      // direction of orbital motion at this point (around the y axis)
       vec3 tan = normalize(vec3(p.z, 0.0, -p.x));
       float cosA = dot(tan, normalize(v));
-      // relativistic Doppler factor
       float D = 1.0 / (gamma * (1.0 - beta * cosA));
-      // flux I ~ D^3 ; u_beam lets you turn beaming off (0) or overdo it
       float beam = pow(D, u_beam);
-      // gravitational redshift sqrt(1 - rs/r)
       float redshift = sqrt(max(1.0 - RS / r, 0.0));
-      // thin-disk brightness: falls steeply with radius
       float I = pow(INNER / r, 3.0) * band * redshift * beam;
       col += diskColor(t) * I * 4.0;
     }
 
-    // integrate null geodesic:  a = -1.5 * L^2 * r / |r|^5   (M = 0.5)
     float dt = 0.03 * r;
     vec3 a = -1.5 * L2 * p / (r * r * r * r * r);
     v += a * dt;
     p += v * dt;
     prevY = p.y;
+  }
+  return col;
+}
+
+// Kerr metric functions
+float Sigma(float r, float th) { return r*r + a*a*cos(th)*cos(th); }
+float Delta(float r) { return r*r - 2.0*M*r + a*a; }
+
+// Radial potential R(r) = P^2 - Delta * (Q + (Lz - aE)^2)
+float R_pot(float r, float E, float Lz, float Q) {
+  float D = Delta(r);
+  float P = E*(r*r + a*a) - a*Lz;
+  return P*P - D*(Q + (Lz - a*E)*(Lz - a*E));
+}
+
+// Angular potential Theta(th) = Q - cos^2(th) * (Lz^2/sin^2(th) - a^2 E^2)
+float Theta_pot(float th, float E, float Lz, float Q) {
+  float sin_th = sin(th);
+  return Q - cos(th)*cos(th) * (Lz*Lz/(sin_th*sin_th) - a*a*E*E);
+}
+
+// First-order Kerr geodesic RHS with signs: returns vec4(sigma_r*dr, sigma_th*dth, dphi, dt)
+vec4 kerr_rhs_signed(float r, float th, float E, float Lz, float Q, float sigma_r, float sigma_th) {
+  float S = Sigma(r, th);
+  float D = Delta(r);
+  float P = E*(r*r + a*a) - a*Lz;
+  float dr = sigma_r * sqrt(max(R_pot(r, E, Lz, Q), 0.0)) / S;
+  float dth = sigma_th * sqrt(max(Theta_pot(th, E, Lz, Q), 0.0)) / S;
+  float dphi = (Lz/(sin(th)*sin(th)) - a*E + a*P/D) / S;
+  float dt = (a*(Lz - a*E*sin(th)*sin(th)) + (r*r + a*a)*P/D) / S;
+  return vec4(dr, dth, dphi, dt);
+}
+
+vec3 render(vec3 ro, vec3 rd){
+  a = u_spin * M;
+
+  // Hybrid: use original Schwarzschild integrator at SPIN=0 for exact visual match
+  if (a < 1e-6) {
+    return render_schwarzschild(ro, rd);
+  }
+
+  // Kerr integrator for SPIN > 0
+  // Convert camera position to Boyer-Lindquist (r, th, phi)
+  float r0 = length(ro);
+  float th0 = acos(clamp(ro.y / r0, -1.0, 1.0));
+  float phi0 = atan(ro.z, ro.x);
+
+  // Project ray onto static observer tetrad at camera (matches Schwarzschild basis)
+  // Camera basis: u_fwd = -e_r, u_right = e_phi, u_up = e_theta
+  float n_r = -dot(rd, u_fwd);
+  float n_phi = dot(rd, u_right);
+  float n_theta = dot(rd, u_up);
+
+  // Conserved quantities for null geodesic (E=1 scale freedom)
+  // Camera basis (u_fwd, u_right, u_up) = (-e_r, e_phi, e_theta) in Cartesian
+  // Static observer tetrad: e_(r) = sqrt(1-2M/r) e_r, e_(phi) = r sin(th) e_phi, e_(theta) = r e_theta
+  // Local momentum: p^(r) = sqrt(1-2M/r) n_r, p^(phi) = r sin(th) n_phi, p^(theta) = r n_theta
+  // Conserved: Lz = p_phi = r sin(th) n_phi, Q = p_theta^2 + cos^2(th)(Lz^2/sin^2(th) - a^2 E^2)
+  // p_theta = g_theta_theta p^theta = r^2 * (p^(theta)/r) = r n_theta
+  float E = 1.0;
+  float sin_th0 = sin(th0);
+  float Lz = r0 * sin_th0 * n_phi;
+  float p_theta = r0 * n_theta;
+  float Q = p_theta * p_theta + cos(th0)*cos(th0) * (Lz*Lz/(sin_th0*sin_th0) - a*a*E*E);
+
+  // Initial signs: photon starts moving inward (dr < 0) and toward/away from equator based on initial direction
+  float sigma_r = -1.0;  // inward
+  float sigma_th = (n_theta > 0.0) ? 1.0 : -1.0;  // toward equator (increasing th) if n_theta > 0
+
+  // Initial state
+  float r = r0, th = th0, phi = phi0;
+  vec3 col = vec3(0.0);
+  float prev_cos_th = cos(th);
+
+  // Horizon radius
+  float r_horizon = M + sqrt(max(M*M - a*a, 0.0));
+
+  for (int i = 0; i < 512; i++) {
+    if (i >= u_maxSteps) break;
+
+    // Horizon check
+    if (r < r_horizon + 0.01) break;
+
+    // Escape check
+    if (r > ESC) {
+      // Compute asymptotic direction at escape
+      vec4 k = kerr_rhs_signed(r, th, E, Lz, Q, sigma_r, sigma_th);
+      float dr = k.x, dth = k.y, dphi = k.z;
+      // Convert to Cartesian direction at large r
+      float dx = dr * sin(th)*cos(phi) + dth * r * cos(th)*cos(phi) - dphi * r * sin(th)*sin(phi);
+      float dy = dr * cos(th) - dth * r * sin(th);
+      float dz = dr * sin(th)*sin(phi) + dth * r * cos(th)*sin(phi) + dphi * r * sin(th)*cos(phi);
+      vec3 d = normalize(vec3(dx, dy, dz));
+
+      vec3 sky = vec3(0.0);
+      sky += u_palette[1] * fbm(d * 3.0 + u_seed) * 0.18;
+      float s1 = smoothstep(0.994, 0.9995, hash(floor(d * 140.0 + u_seed)));
+      float s2 = smoothstep(0.998, 0.9999, hash(floor(d * 60.0 + u_seed * 3.1)));
+      sky += vec3(1.0) * (s1 * 0.9 + s2 * 0.5);
+      col += sky;
+      break;
+    }
+
+    // Check for turning points and flip signs
+    float R_val = R_pot(r, E, Lz, Q);
+    float Theta_val = Theta_pot(th, E, Lz, Q);
+    if (R_val <= 0.0) sigma_r = -sigma_r;
+    if (Theta_val <= 0.0) sigma_th = -sigma_th;
+
+    // Disk crossing: detect sign change of cos(th) through equatorial plane
+    float cos_th = cos(th);
+    bool crossed = (prev_cos_th * cos_th < 0.0);
+    if (crossed && r > INNER && r < OUTER) {
+      // Compute disk emission at crossing (Schwarzschild physics for now)
+      vec4 k = kerr_rhs_signed(r, th, E, Lz, Q, sigma_r, sigma_th);
+      float dr = k.x, dth = k.y, dphi = k.z;
+
+      // Cartesian direction components at th ~ pi/2
+      float dx = dr * sin(th)*cos(phi) + dth * r * cos(th)*cos(phi) - dphi * r * sin(th)*sin(phi);
+      float dy = dr * cos(th) - dth * r * sin(th);
+      float dz = dr * sin(th)*sin(phi) + dth * r * cos(th)*sin(phi) + dphi * r * sin(th)*cos(phi);
+      vec3 photon_dir = normalize(vec3(dx, dy, dz));
+
+      // Orbital direction in Cartesian at this phi (disk at th=pi/2)
+      vec3 orbital_dir = normalize(vec3(-sin(phi), 0.0, cos(phi)));
+
+      float band = exp(-(r * cos_th * r * cos_th) / (2.0 * 0.02));
+      float t = clamp((r - INNER) / (OUTER - INNER), 0.0, 1.0);
+      float beta = sqrt(0.5 / r);
+      float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
+      float cosA = dot(photon_dir, orbital_dir);
+      float D = 1.0 / (gamma * (1.0 - beta * cosA));
+      float beam = pow(D, u_beam);
+      float redshift = sqrt(max(1.0 - RS / r, 0.0));
+      float I = pow(INNER / r, 3.0) * band * redshift * beam;
+      col += diskColor(t) * I * 4.0;
+    }
+    prev_cos_th = cos_th;
+
+    // RK4 step with sign tracking
+    float dt = 0.03 * r;  // match Schwarzschild step size
+    
+    // k1
+    vec4 k1 = kerr_rhs_signed(r, th, E, Lz, Q, sigma_r, sigma_th);
+    float r1 = r + 0.5*dt*k1.x;
+    float th1 = th + 0.5*dt*k1.y;
+    float R1 = R_pot(r1, E, Lz, Q);
+    float Th1 = Theta_pot(th1, E, Lz, Q);
+    float sr1 = (R1 <= 1e-6) ? -sigma_r : sigma_r;
+    float st1 = (Th1 <= 1e-6) ? -sigma_th : sigma_th;
+    
+    // k2
+    vec4 k2 = kerr_rhs_signed(r1, th1, E, Lz, Q, sr1, st1);
+    float r2 = r + 0.5*dt*k2.x;
+    float th2 = th + 0.5*dt*k2.y;
+    float R2 = R_pot(r2, E, Lz, Q);
+    float Th2 = Theta_pot(th2, E, Lz, Q);
+    float sr2 = (R2 <= 1e-6) ? -sigma_r : sigma_r;
+    float st2 = (Th2 <= 1e-6) ? -sigma_th : sigma_th;
+    
+    // k3
+    vec4 k3 = kerr_rhs_signed(r2, th2, E, Lz, Q, sr2, st2);
+    float r3 = r + dt*k3.x;
+    float th3 = th + dt*k3.y;
+    float R3 = R_pot(r3, E, Lz, Q);
+    float Th3 = Theta_pot(th3, E, Lz, Q);
+    float sr3 = (R3 <= 1e-6) ? -sigma_r : sigma_r;
+    float st3 = (Th3 <= 1e-6) ? -sigma_th : sigma_th;
+    
+    // k4
+    vec4 k4 = kerr_rhs_signed(r3, th3, E, Lz, Q, sr3, st3);
+    
+    // Update position
+    r += dt/6.0 * (k1.x + 2.0*k2.x + 2.0*k3.x + k4.x);
+    th += dt/6.0 * (k1.y + 2.0*k2.y + 2.0*k3.y + k4.y);
+    phi += dt/6.0 * (k1.z + 2.0*k2.z + 2.0*k3.z + k4.z);
+    
+    // Update signs for next step based on new position
+    float R_new = R_pot(r, E, Lz, Q);
+    float Th_new = Theta_pot(th, E, Lz, Q);
+    if (R_new <= 1e-6) sigma_r = -sigma_r;
+    if (Th_new <= 1e-6) sigma_th = -sigma_th;
   }
   return col;
 }
@@ -322,7 +496,7 @@ void main(){
   vec3 rd = normalize(u_fwd + u_right * uv.x * u_tanFov * aspect + u_up * uv.y * u_tanFov);
 
   vec3 col = render(u_camPos, rd);
-  // ACES-ish tone map + gamma, same as v1 (post is done in pass 3)
+  // ACES-ish tone map + gamma
   col = col * (2.51 * col + 0.03) / (col * (2.43 * col + 0.59) + 0.14);
   col = pow(col, vec3(1.0 / 2.2));
   fragColor = vec4(col, 1.0);
