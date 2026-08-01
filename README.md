@@ -1,6 +1,6 @@
 # PIXEL BLACK HOLE
 
-WebGL2 Schwarzschild geodesic raytracer in a retro palette. Single-file, no build.
+WebGL2 **Kerr** geodesic raytracer in a retro palette. Single-file, no build.
 
 ## Files
 
@@ -13,13 +13,14 @@ Open `blackhole-pixel.html` in any WebGL2 browser (Chrome/Edge/Firefox/Safari 15
 
 ## Physics (emergent, not faked)
 
-- Photon geodesics integrated in Schwarzschild spacetime (M = 0.5), null path with a = -1.5·L²·r/|r|⁵
-- ISCO at r = 3, disk to r = 12, horizon at r = 1 → shadow
-- Doppler beaming I ∝ D³, gravitational redshift √(1 - rs/r), thin-disk T ∝ r^-3/4 coloring
+- Photon geodesics integrated in **Kerr spacetime** (M = 0.5, a = 0..0.998), null path with Carter constant Q
+- ISCO migrates from r = 3 (a=0) to r ≈ 1.24 (a=0.998), disk to r = 12, horizon at r = M + √(M²-a²) → shadow
+- Doppler beaming I ∝ D³, gravitational redshift √(1 - rs/r)², thin-disk T ∝ r^-3/4 (Novikov-Thorne)
+- **Relativistic jets** from Blandford-Znajek mechanism: synchrotron emissivity along spin axis, Doppler-beamed, palette-mapped
 
 ## Controls
 
-Drag = orbit · Scroll = zoom · DISK HEAT / DOPPLER BEAMING / TILT / DISTANCE / QUALITY / PALETTE (4) / DITHER / SCANLINES / AUTO-ORBIT / FLY-THROUGH / FILM GRADE / BLOOM / SAVE PNG
+Drag = orbit · Scroll = zoom · DISK HEAT / DOPPLER BEAMING / TILT / DISTANCE / QUALITY / PALETTE (10) / DITHER / SCANLINES / AUTO-ORBIT / FLY-THROUGH / FILM GRADE / BLOOM / **SPIN / JET BRIGHTNESS** / SAVE PNG
 
 ---
 
@@ -33,27 +34,19 @@ Drag = orbit · Scroll = zoom · DISK HEAT / DOPPLER BEAMING / TILT / DISTANCE /
 | Theme icon: save | `assets/icon-save.png` (147B) | 172 px, all `#f5f7ff`, 0 black |
 | Theme icon: physics | `assets/icon-physics.png` (175B) | 56 px = 52 `#f5f7ff` orbit + 4 `#ffb000` nucleus, 0 black |
 | Cursor | `assets/cursor.png` (124B) | 48 px, all `#e4e1d2`, 0 black |
+| Boot sprite | `assets/boot-sheet.png` | 64×16, 4 frames, 260 opaque px, ring+arc+disk glyphs |
 
-## What's broken
+## What's fixed
 
-### 1. Boot sprite — `assets/boot.aseprite` + `assets/boot-sheet.png`
-- **Current state:** `boot.aseprite` was overwritten with a fresh 64×16 canvas, then has **5 stray test pixels** from MCP-bug debugging: 2 amber `#ff9a2e` at (8,8) and (9,8); 3 dark `#1c1f2e` at (10,8), (11,8), (12,8), (13,8). `boot-sheet.png` is still the old broken export (138B, 84 dark px, zero ring/arc).
-- **Intended design:** single 64×16 frame, 4 glyphs at x-offsets 0/16/32/48. Each glyph = 5×5 disk `#1c1f2e` at local (6,6) + 30-px ring `#ff9a2e` (circle r=6, 40 px minus 10 arc) + 10-px arc `#f5f7ff` rotating CW 90° per frame (bottom → right → top → left).
-- **Coordinates (regenerated, ready to use):** see Python snippet below.
+### 1. Boot sprite — `assets/boot-sheet.png` ✅ FIXED
+- Rebuilt from exact coordinates: 4 glyphs × (30 ring + 10 arc + 25 disk) = 260 opaque px
+- HTML CSS bug fixed: `background-size: 64px 64px` (was 16px 16px)
+- Boot animation spins correctly, 0 console errors
 
-### 2. HTML CSS bug — `blackhole-pixel.html` line 75
-```css
-#boot::after{...background:url('assets/boot-sheet.png') no-repeat 0 0;background-size:16px 16px;...}
-```
-`background-size:16px 16px` is wrong for a 64×16 sheet. Must be `background-size:64px 64px` (4× upscale to 64×64 display, with the existing `-16px` background-position steps).
-
-### 3. MCP bug discovered — `aseprite_batch_operations`
-- **Symptom:** `draw_pixels` and `draw_rectangle` inside a batch fail with Python TypeErrors:
-  - `draw_pixels` → `"string indices must be integers, not 'str'"`
-  - `draw_rectangle` → `"unsupported operand type(s) for -: 'str' and 'int'"`
-- **Works:** standalone `draw_pixels`/`draw_rectangle`, and `batch_operations` for `create_canvas` + `save_as`.
-- **Workaround:** use standalone tool calls (one per op). Slower but reliable.
-- **Long-term fix:** needs someone to patch the MCP server's batch handler for draw ops.
+### 2. MCP bug discovered — `aseprite_batch_operations` (known limitation)
+- `draw_pixels` and `draw_rectangle` inside a batch fail with Python TypeErrors
+- Workaround: use standalone tool calls (one per op). Slower but reliable.
+- Long-term fix: needs someone to patch the MCP server's batch handler for draw ops.
 
 ## Boot rebuild — exact coordinates
 
@@ -81,15 +74,6 @@ python3 -m http.server 9876
 ```
 (`file://` is blocked by Playwright; use HTTP. Port 9876 was free last check; 8765 is taken by LocalMCP.)
 
-## Cleanup needed before close
-
-- [ ] Remove stray pixels from `assets/boot.aseprite` (or just delete it — it's broken anyway)
-- [ ] Delete leftover: `boot-sheet1.png`, `boot-sheet2.png`, `boot-f1.png`-`boot-f4.png`, `test-rects.aseprite`, `drawtest.aseprite`/`.png`, `amber-reexport.png`
-- [ ] Rebuild `boot.aseprite` + `boot-sheet.png` (see coordinates above)
-- [ ] Fix HTML line 75 `background-size`
-- [ ] Browser regression: boot spins, icons render, 0 console errors
-- [ ] Update `docs/aseprite-usecases.md` (#4 boot = in-progress, #5 cursor = done)
-
 ## Feature idea noted (not started)
 
-- Relativistic jets from the black hole poles — user requested, deferred.
+- Relativistic jets from the black hole poles — **IMPLEMENTED** (Blandford-Znajek, SPIN + JET BRIGHTNESS controls)
