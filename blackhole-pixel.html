@@ -137,35 +137,42 @@
   <div class="card">
     <button class="close" id="info-close">X</button>
     <h2>BLACK HOLE PHYSICS</h2>
-    <p>Everything on screen is <b>emergent physics, not faked</b>: rays are traced backwards from the camera through real Schwarzschild geodesics. Here's what each feature actually is.</p>
+    <p>Everything on screen is <b>emergent physics, not faked</b>: rays are traced backwards from the camera through real <b>Kerr geodesics</b> (spinning black hole). Here's what each feature actually is.</p>
 
-    <h3>PHOTON RING &mdash; 1.5 R&#8331;</h3>
-    <p>The thin bright ring is the photon sphere: gravity bends light so strongly that photons can orbit the hole in circles. The ring you see is the last photon orbit, lensed into a near-circle. Its radius in Schwarzschild geometry is <span class="formula">r = 1.5 &middot; R&#8331;</span></p>
+    <h3>SPIN &mdash; THE KERR PARAMETER</h3>
+    <p>Real black holes spin. The SPIN slider controls the dimensionless spin <span class="formula">a = Jc/GM&sup2;</span> from 0 (Schwarzschild, non-spinning) to 0.998 (the Thorne limit, where accretion spin-up balances radiation drag). Spin changes everything visible: the photon ring becomes asymmetric, the ISCO moves inward, and frame-dragging twists spacetime itself.</p>
 
-    <h3>SHADOW &amp; EVENT HORIZON &mdash; R&#8331;</h3>
-    <p>The black disk is the shadow of the event horizon &mdash; the region where escape velocity exceeds c. In Schwarzschild coordinates the horizon sits at <span class="formula">R&#8331; = 2GM/c&sup2;</span> and nothing inside can signal out. The shadow appears ~2.6&times; wider than the horizon due to lensing.</p>
+    <h3>PHOTON RING &mdash; ASYMMETRIC AT HIGH SPIN</h3>
+    <p>The thin bright ring is the photon sphere: gravity bends light so strongly that photons can orbit. In Schwarzschild (a=0) it's a perfect circle at <span class="formula">r = 1.5 R&#8331;</span>. In Kerr it becomes an <b>oblate ring</b> — brighter on the side rotating toward you, dimmer on the receding side. This is the same asymmetry seen in the EHT M87* image.</p>
 
-    <h3>ACCRETION DISK &amp; THE UNDERSIDE</h3>
-    <p>The glowing band is matter spiralling inward. Because the hole's gravity bends light around itself, you see the <b>lensed underside of the disk</b> arcing above and below the shadow &mdash; light from behind the hole wraps around to reach you. This is pure geodesic bending.</p>
+    <h3>SHADOW & EVENT HORIZON</h3>
+    <p>The black disk is the shadow of the event horizon. In Kerr the horizon radius is <span class="formula">r&#8331; = M + &radic;(M&sup2; &minus; a&sup2;)</span> — it shrinks with spin. The shadow appears ~2.6&times; wider than the horizon due to lensing.</p>
+
+    <h3>ISCO MIGRATION</h3>
+    <p>The innermost stable circular orbit moves from <span class="formula">r = 3 R&#8331;</span> (a=0) down to <span class="formula">r &approx; 1.24 R&#8331;</span> (a=0.998). The accretion disk's inner edge follows the ISCO — at high spin the disk extends much closer to the shadow.</p>
+
+    <h3>FRAME-DRAGGING (LENSE-THIRRING)</h3>
+    <p>The spinning hole drags spacetime around with it. Gas at the ISCO orbits faster than Keplerian because space itself is rotating. This <b>frame-dragging</b> is why the ISCO moves inward and why the photon ring is asymmetric.</p>
+
+    <h3>ACCRETION DISK & THE UNDERSIDE</h3>
+    <p>The glowing band is matter spiralling inward. Because the hole's gravity bends light around itself, you see the <b>lensed underside of the disk</b> arcing above and below the shadow. This is pure geodesic bending. Disk temperature follows the Novikov-Thorne profile <span class="formula">T &prop; r<sup>&minus;3/4</sup>(1 &minus; &radic;(r&#8331;/r))<sup>1/4</sup></span> — zero at the ISCO.</p>
 
     <h3>DOPPLER BEAMING</h3>
-    <p>Gas orbits near light speed. The side rotating <i>toward</i> you is blueshifted and brighter; the receding side is dimmer and redder. Relativistic beaming boosts intensity by a factor of <span class="formula">I &prop; D&sup3;, D = 1/&gamma;(1&minus;&beta;cos&theta;)</span> &mdash; that's why one side of the disk visibly blazes.</p>
-
-    <h3>DISK HEAT</h3>
-    <p>Real accretion disks glow hotter toward the inside (thin-disk temperature profile <span class="formula">T &prop; r<sup>&minus;3/4</sup></span>). The inner edge runs white-hot; the outer fades to deep orange. The HEAT slider scales exactly this profile.</p>
+    <p>Gas orbits near light speed. The side rotating <i>toward</i> you is blueshifted and brighter; the receding side is dimmer and redder. The full Kerr Doppler factor uses the photon 4-momentum and the gas 4-velocity: <span class="formula">D = (p&mu; u&mu;)<sub>emitter</sub> / (p&mu; u&mu;)<sub>observer</sub></span>. The BEAMING slider scales the exponent.</p>
 
     <h3>GRAVITATIONAL REDSHIFT</h3>
-    <p>Light climbing out of the well loses energy: <span class="formula">z = 1/&radic;(1 &minus; R&#8331;/r) &minus; 1</span>. Matter near the horizon looks reddened and dimmer. Combined with beaming it shapes the disk's inner colors.</p>
+    <p>Light climbing out of the well loses energy: <span class="formula">z = 1/&radic;(1 &minus; R&#8331;/r) &minus; 1</span>. The bolometric flux dims as <span class="formula">D<sub>grav</sub>&sup2;</span> (photon energy &times; arrival rate). Combined with beaming it shapes the disk's inner colors.</p>
 
-    <h3>ISCO &mdash; 3 R&#8331;</h3>
-    <p>The innermost stable circular orbit. Inside <span class="formula">r = 3R&#8331;</span> no stable orbit exists &mdash; gas must plunge. That dark gap between the ring and the disk's inner edge is the ISCO, a real prediction of the geometry.</p>
+    <h3>RELATIVISTIC JETS (BLANDFORD-ZNAJEK)</h3>
+    <p>The spinning ergosphere twists magnetic field lines anchored to the disk, launching Poynting-flux-dominated plasma along the spin axis — the <b>Blandford-Znajek mechanism</b>. Jets are collimated (~8&deg; half-angle), relativistic (γ ~ 3), and synchrotron-emitting. They are Doppler-beamed along the axis: blindingly bright when viewed down the pole, nearly invisible edge-on. The JET BRIGHTNESS slider scales emissivity without breaking the beaming physics.</p>
 
-    <h3>TILT, DISTANCE &amp; ORBIT</h3>
-    <p>Drag to orbit: you're moving the camera around a fixed hole, and the disk's apparent shape (and the lensed arc) changes with viewing angle &mdash; the same effect seen in the M87* image. Scroll to zoom changes camera distance; at large distance the ring approaches its true 1.5R&#8331; size.</p>
+    <h3>TILT, DISTANCE & ORBIT</h3>
+    <p>Drag to orbit: you're moving the camera around a fixed hole. The disk's apparent shape and the lensed arc change with viewing angle — the same effect seen in the M87* image. Scroll to zoom changes camera distance; at large distance the ring approaches its true size.</p>
 
     <h3>FILM GRADE / BLOOM / DITHER</h3>
     <p>Post-processing on top of the physics: grade is a color-science pass + anamorphic letterbox; bloom is a glow around white-hot pixels; dither approximates ordered dithering to snap colors to the 8-color palette. Physics renders first, look is applied second &mdash; the sim is unchanged underneath.</p>
   </div>
+</div>
 </div>
 
 <script>
