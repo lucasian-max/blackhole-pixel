@@ -270,6 +270,49 @@ vec3 diskColor(float t){
   return mix(c, hot, heat);
 }
 
+vec3 jet_emission(float r, float th, float E, float Lz, float Q, float a_dimless) {
+  float a = a_dimless * M;
+  float r_isco = isco_radius(a_dimless);
+  
+  // Collimation: Gaussian around spin axis (th=0 and th=pi)
+  float cos_th = cos(th);
+  float collimation = exp(-(1.0 - abs(cos_th))*(1.0 - abs(cos_th)) / (2.0 * 0.07*0.07));  // ~8° half-angle
+  
+  // Early exit if outside jet cone
+  if (collimation <= 0.01) return vec3(0.0);
+  
+  // Radial profile: power law from ISCO outward
+  float radial = pow(r_isco / r, 2.0);
+  
+  // Knots: slow-moving internal shocks
+  float knots = 1.0 + 0.3 * sin(r * 2.0 + u_time * 0.1);
+  
+  // Doppler beaming along jet axis (bulk beta ~ 0.95)
+  float beta_jet = 0.95;
+  float gamma_jet = 1.0 / sqrt(1.0 - beta_jet*beta_jet);
+  float cos_psi = abs(cos_th);  // angle between jet axis and line of sight
+  float D_jet = 1.0 / (gamma_jet * (1.0 - beta_jet * cos_psi));
+  float beam_jet = pow(D_jet, 3.0);  // bolometric
+  
+  // Counter-jet (opposite direction)
+  float D_counter = 1.0 / (gamma_jet * (1.0 + beta_jet * cos_psi));
+  float beam_counter = pow(D_counter, 3.0);
+  
+  // Total beaming (jet + counter-jet, but counter-jet is very dim)
+  float beam_total = beam_jet + 0.01 * beam_counter;
+  
+  // Gravitational redshift at base (using RS=2M=1.0)
+  float redshift = (1.0 - RS / r_isco) * (1.0 - RS / r_isco);
+  
+  // Emissivity
+  float j = u_jetBrightness * collimation * radial * knots * beam_total * redshift;
+  
+  // Color: high-luma end of palette (indices 5..7)
+  vec3 jet_col = palette_color(0.8 + 0.2 * (1.0 - r_isco/r));  // hotter near base
+  
+  return jet_col * j;
+}
+
 // Original Schwarzschild integrator (exact match for SPIN=0)
 vec3 render_schwarzschild(vec3 ro, vec3 rd){
   vec3 p = ro, v = rd;
@@ -308,6 +351,11 @@ vec3 render_schwarzschild(vec3 ro, vec3 rd){
       float I = pow(INNER / r, 3.0) * band * redshift * beam;
       col += palette_color(t) * I * 4.0;
     }
+
+    // Jet emission (synchrotron along spin axis, y-axis)
+    // Schwarzschild: a=0, spin axis is y, th = acos(y/r)
+    float th_sch = acos(clamp(p.y / r, -1.0, 1.0));
+    col += jet_emission(r, th_sch, 1.0, 0.0, 0.0, 0.0);
 
     float dt = 0.03 * r;
     vec3 a = -1.5 * L2 * p / (r * r * r * r * r);
@@ -491,6 +539,9 @@ vec3 render(vec3 ro, vec3 rd){
     }
     prev_cos_th = cos_th;
     prev_r = r;
+
+    // Jet emission (synchrotron along spin axis)
+    col += jet_emission(r, th, E, Lz, Q, u_spin);
 
     // RK4 step with sign tracking
     float dt = 0.03 * r;  // match Schwarzschild step size
