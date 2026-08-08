@@ -82,13 +82,6 @@
       <div class="ctl"><label>DOPPLER BEAMING</label><input type="range" id="beam" min="0" max="4" step="0.05" value="3"></div>
       <div class="ctl"><label>TILT &deg;</label><input type="range" id="tilt" min="4" max="80" step="0.5" value="18"></div>
       <div class="ctl"><label>DISTANCE</label><input type="range" id="zoom" min="5" max="30" step="0.1" value="10"></div>
-      <div class="ctl"><label>QUALITY</label>
-        <select id="quality">
-          <option value="64">LOW</option>
-          <option value="128" selected>MED</option>
-          <option value="256">HIGH</option>
-        </select>
-      </div>
     </div>
     <div class="row">
       <div class="ctl"><label>PALETTE [<span id="palname">GARGANTUA</span>]</label><div class="swatches" id="swatches"></div></div>
@@ -110,7 +103,6 @@
           <option value="COLD">COLD</option>
         </select>
       </div>
-      <div class="ctl"><label>BLOOM</label><input type="range" id="bloom" min="0" max="3" step="0.05" value="0.8"></div>
       <button id="save"><img src="assets/icon-save.png" alt="">SAVE PNG</button>
       <button id="info-btn" title="Black hole physics guide"><img src="assets/icon-physics.png" alt="">PHYSICS ?</button>
     </div>
@@ -147,8 +139,8 @@
     <h3>TILT, DISTANCE &amp; ORBIT</h3>
     <p>Drag to orbit: you're moving the camera around a fixed hole, and the disk's apparent shape (and the lensed arc) changes with viewing angle &mdash; the same effect seen in the M87* image. Scroll to zoom changes camera distance; at large distance the ring approaches its true 1.5R&#8331; size.</p>
 
-    <h3>FILM GRADE / BLOOM / DITHER</h3>
-    <p>Post-processing on top of the physics: grade is a color-science pass + anamorphic letterbox; bloom is a glow around white-hot pixels; dither approximates ordered dithering to snap colors to the 8-color palette. Physics renders first, look is applied second &mdash; the sim is unchanged underneath.</p>
+    <h3>FILM GRADE / DITHER</h3>
+    <p>Post-processing on top of the physics: grade is a color-science pass + anamorphic letterbox; dither approximates ordered dithering to snap colors to the 8-color palette. Physics renders first, look is applied second &mdash; the sim is unchanged underneath.</p>
   </div>
 </div>
 
@@ -309,39 +301,7 @@ void main(){
   fragColor = vec4(col, 1.0);
 }`;
 
-// ---- pass 2: bloom - extract bright pixels, blur them into a glow ----
-const FRAG_BLOOM = `#version 300 es
-precision highp float;
-out vec4 fragColor;
-
-uniform vec2  u_res;
-uniform sampler2D u_tex;
-uniform float u_bloom;   // 0..3 slider
-
-float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
-// soft threshold: 0 below 0.55 luma, ramps to 1 at 1.0
-float extract(vec3 c){ return clamp((luma(c) - 0.55) / 0.45, 0.0, 1.0); }
-
-void main(){
-  vec2 px = 1.0 / u_res;
-  vec2 uv = gl_FragCoord.xy / u_res;
-  // glow radius grows with strength
-  float rad = 1.0 + u_bloom * 1.8;
-  vec3 acc = vec3(0.0);
-  float tw = 0.0;
-  for (int dy = -1; dy <= 1; dy++){
-    for (int dx = -1; dx <= 1; dx++){
-      vec2 off = vec2(float(dx), float(dy)) * px * rad;
-      vec3 s = texture(u_tex, uv + off).rgb;
-      float w = extract(s) * (dx == 0 && dy == 0 ? 4.0 : (dx == 0 || dy == 0 ? 2.0 : 1.0));
-      acc += s * w;
-      tw += w;
-    }
-  }
-  fragColor = vec4(tw > 0.0 ? acc / tw : vec3(0.0), 1.0);
-}`;
-
-// ---- pass 3: composite - bloom add, film grade, palette quantize, scanlines, letterbox, grain ----
+// ---- pass 3: composite - film grade, palette quantize, scanlines, letterbox, grain ----
 const FRAG_FINAL = `#version 300 es
 precision highp float;
 out vec4 fragColor;
@@ -349,8 +309,6 @@ out vec4 fragColor;
 uniform vec2  u_res;
 uniform float u_time;
 uniform sampler2D u_texA;   // scene
-uniform sampler2D u_texB;   // bloom
-uniform float u_bloom;
 uniform vec4  u_grade;      // sat, con, grain, letterbox
 uniform vec3  u_tintMul;
 uniform vec3  u_tintAdd;
@@ -394,7 +352,6 @@ void main(){
   vec2 uv = tuv * 2.0 - 1.0;
 
   vec3 col = texture(u_texA, tuv).rgb;
-  col += texture(u_texB, tuv).rgb * u_bloom;
 
   // film grade (pre-quantize, so it shifts which palette colors are chosen)
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
@@ -429,20 +386,17 @@ function makeProgram(fragSrc){
 }
 
 const progScene = makeProgram(FRAG_SCENE);
-const progBloom = makeProgram(FRAG_BLOOM);
 const progFinal = makeProgram(FRAG_FINAL);
 
-const Us = {}, Ub = {}, Uf = {};
+const Us = {}, Uf = {};
 for (const n of ['u_res','u_time','u_seed','u_camPos','u_fwd','u_right','u_up','u_tanFov',
                  'u_heat','u_beam','u_maxSteps','u_palette','u_palCount'])
   Us[n] = gl.getUniformLocation(progScene, n);
-for (const n of ['u_res','u_tex','u_bloom'])
-  Ub[n] = gl.getUniformLocation(progBloom, n);
-for (const n of ['u_res','u_time','u_texA','u_texB','u_bloom','u_grade','u_tintMul','u_tintAdd',
+for (const n of ['u_res','u_time','u_texA','u_grade','u_tintMul','u_tintAdd',
                  'u_palette','u_palCount','u_dither','u_scan'])
   Uf[n] = gl.getUniformLocation(progFinal, n);
 
-// --- offscreen targets: scene -> texA, bloom -> texB ---
+// --- offscreen target: scene -> texA ---
 function makeTarget(){
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -458,23 +412,15 @@ function makeTarget(){
   return {tex, fbo};
 }
 const targetA = makeTarget();
-const targetB = makeTarget();
-// bloom texture wants linear filtering for a soft blur
-gl.bindTexture(gl.TEXTURE_2D, targetB.tex);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
 gl.useProgram(progFinal);
 gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targetA.tex); gl.uniform1i(Uf.u_texA, 0);
-gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, targetB.tex); gl.uniform1i(Uf.u_texB, 1);
-gl.useProgram(progBloom);
-gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targetA.tex); gl.uniform1i(Ub.u_tex, 0);
 gl.useProgram(progScene);
 
 let palette = PALETTES.GARGANTUA, palName = 'GARGANTUA';
 let az = Math.random() * 6.28, el = 18 * Math.PI / 180, dist = 10;
-let maxSteps = 128, dither = 1, scan = 1, orbit = 1, seed = Math.random() * 100;
-let fly = 0, grade = GRADES.NONE, bloom = 0.8;
+let maxSteps = 256, dither = 1, scan = 1, orbit = 1, seed = Math.random() * 100;
+let fly = 0, grade = GRADES.NONE;
 let dragging = false, lastX = 0, lastY = 0, lastT = 0;
 
 function setPalette(){
@@ -548,19 +494,11 @@ function frame(t){
   gl.uniform1i(Us.u_maxSteps, maxSteps);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  // ---- pass 2: bloom into texB ----
-  gl.bindFramebuffer(gl.FRAMEBUFFER, targetB.fbo);
-  gl.useProgram(progBloom);
-  gl.uniform2f(Ub.u_res, cv.width, cv.height);
-  gl.uniform1f(Ub.u_bloom, bloom);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-  // ---- pass 3: composite to canvas ----
+  // ---- pass 2: composite to canvas ----
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.useProgram(progFinal);
   gl.uniform2f(Uf.u_res, cv.width, cv.height);
   gl.uniform1f(Uf.u_time, secs);
-  gl.uniform1f(Uf.u_bloom, bloom);
   gl.uniform4f(Uf.u_grade, grade.sat, grade.con, grade.grain, grade.letterbox ? 1 : 0);
   gl.uniform3fv(Uf.u_tintMul, grade.mul);
   gl.uniform3fv(Uf.u_tintAdd, grade.add);
@@ -573,12 +511,10 @@ function frame(t){
 // --- controls ---
 document.getElementById('tilt').oninput = e => el = parseFloat(e.target.value) * Math.PI / 180;
 document.getElementById('zoom').oninput = e => dist = parseFloat(e.target.value);
-document.getElementById('quality').onchange = e => maxSteps = parseInt(e.target.value);
 document.getElementById('dither').onchange = e => dither = e.target.checked ? 1 : 0;
 document.getElementById('scan').onchange  = e => scan   = e.target.checked ? 1 : 0;
 document.getElementById('orbit').onchange = e => orbit  = e.target.checked ? 1 : 0;
 document.getElementById('fly').onchange   = e => fly    = e.target.checked ? 1 : 0;
-document.getElementById('bloom').oninput  = e => bloom  = parseFloat(e.target.value);
 document.getElementById('grade').onchange = e => grade  = GRADES[e.target.value];
 document.getElementById('seed').onclick   = () => { seed = Math.random() * 100; };
 document.getElementById('save').onclick   = () => {
